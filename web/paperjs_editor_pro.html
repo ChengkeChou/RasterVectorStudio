@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper.js SVG Editor</title>
+    
+    <!-- 添加QWebChannel支持 -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #mainCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+            background-color: white;
+            cursor: crosshair;
+            border: none;
+            outline: none;
+        }
+        
+        #debugInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .debug-line {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="mainCanvas" resize></canvas>
+    
+    <!-- 调试信息面板 -->
+    <div id="debugInfo">
+        <div class="debug-line">Paper.js状态: <span id="paperStatus">未初始化</span></div>
+        <div class="debug-line">当前工具: <span id="currentTool">无</span></div>
+        <div class="debug-line">画布大小: <span id="canvasSize">0x0</span></div>
+        <div class="debug-line">对象数量: <span id="objectCount">0</span></div>
+        <div class="debug-line">WebChannel: <span id="channelStatus">未连接</span></div>
+    </div>
+
+    <!-- QWebChannel库 -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <!-- Paper.js库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js"></script>
+    
+    <!-- 主要的JavaScript代码 -->
+    <script>
+        console.log('=== Paper.js SVG Editor 初始化开始 ===');
+        
+        // QWebChannel桥接
+        window.pythonBridge = null;
+        
+        // 初始化QWebChannel
+        function initWebChannel() {
+            if (typeof QWebChannel !== 'undefined' && window.qt && window.qt.webChannelTransport) {
+                new QWebChannel(window.qt.webChannelTransport, function(channel) {
+                    window.pythonBridge = channel.objects.backend;
+                    console.log('✓ QWebChannel连接成功');
+                    document.getElementById('channelStatus').textContent = '已连接';
+                });
+            } else {
+                console.warn('QWebChannel不可用，将在独立模式下运行');
+                document.getElementById('channelStatus').textContent = '独立模式';
+            }
+        }
+        
+        // 通知Python选中项改变
+        function notifyPythonOfSelectionChange() {
+            if (!window.pythonBridge) return;
+            
+            var properties = {};
+            if (paper.project.selectedItems.length > 0) {
+                var firstItem = paper.project.selectedItems[0];
+                
+                if (firstItem.fillColor) {
+                    properties.fillColor = firstItem.fillColor.toCSS(true);
+                }
+                if (firstItem.strokeColor) {
+                    properties.strokeColor = firstItem.strokeColor.toCSS(true);
+                }
+                properties.strokeWidth = firstItem.strokeWidth || 0;
+                properties.opacity = firstItem.opacity !== undefined ? firstItem.opacity : 1.0;
+            }
+            
+            var jsonString = JSON.stringify(properties);
+            try {
+                window.pythonBridge.on_selection_changed(jsonString);
+            } catch (error) {
+                console.error('发送选中项改变通知失败:', error);
+            }
+        }
+        
+        // 全局应用状态
+        window.AppState = {
+            currentTool: 'select',
+            currentColor: '#000000',
+            strokeWidth: 2,
+            isDrawing: false,
+            selectedItems: [],
+            debugMode: false
+        };
+        
+        // 调试工具
+        window.DebugUtils = {
+            log: function(message) {
+                console.log('[Paper.js Editor]', message);
+                this.updateDebugPanel();
+            },
+            
+            error: function(message, error) {
+                console.error('[Paper.js Editor]', message, error);
+                this.updateDebugPanel();
+            },
+            
+            updateDebugPanel: function() {
+                if (!window.AppState.debugMode) return;
+                
+                try {
+                    document.getElementById('paperStatus').textContent = 
+                        (typeof paper !== 'undefined' && paper.project) ? '已初始化' : '未初始化';
+                    document.getElementById('currentTool').textContent = window.AppState.currentTool;
+                    document.getElementById('canvasSize').textContent = 
+                        paper && paper.view ? `${paper.view.size.width}x${paper.view.size.height}` : '0x0';
+                    document.getElementById('objectCount').textContent = 
+                        paper && paper.project ? paper.project.activeLayer.children.length : '0';
+                } catch (e) {
+                    console.warn('调试面板更新失败:', e);
+                }
+            },
+            
+            toggleDebugPanel: function() {
+                window.AppState.debugMode = !window.AppState.debugMode;
+                const panel = document.getElementById('debugInfo');
+                panel.style.display = window.AppState.debugMode ? 'block' : 'none';
+                this.updateDebugPanel();
+            }
+        };
+        
+        // Paper.js 初始化
+        function initializePaper() {
+            try {
+                console.log('开始初始化Paper.js...');
+                
+                // 检查Paper.js是否加载
+                if (typeof paper === 'undefined') {
+                    throw new Error('Paper.js库未加载');
+                }
+                
+                // 获取canvas元素
+                const canvas = document.getElementById('mainCanvas');
+                if (!canvas) {
+                    throw new Error('找不到canvas元素');
+                }
+                
+                // 初始化Paper.js项目
+                paper.setup(canvas);
+                
+                // 验证初始化
+                if (!paper.project || !paper.view) {
+                    throw new Error('Paper.js初始化失败');
+                }
+                
+                console.log('Paper.js初始化成功');
+                console.log('画布大小:', paper.view.size.width, 'x', paper.view.size.height);
+                
+                // 设置视图
+                paper.view.center = new paper.Point(paper.view.size.width / 2, paper.view.size.height / 2);
+                
+                // 初始化工具
+                initializeTools();
+                
+                // 设置默认工具
+                activateTool('select');
+                
+                window.DebugUtils.log('Paper.js编辑器初始化完成');
+                
+                return true;
+                
+            } catch (error) {
+                window.DebugUtils.error('Paper.js初始化失败:', error);
+                return false;
+            }
+        }
+        
+        // 工具初始化
+        function initializeTools() {
+            console.log('初始化工具系统...');
+            
+            // 选择工具
+            window.selectTool = new paper.Tool();
+            window.selectTool.name = 'select';
+            
+            // 选择工具事件处理
+            window.selectTool.onMouseDown = function(event) {
+                // 命中测试
+                var hitResult = paper.project.hitTest(event.point, {
+                    fill: true,
+                    stroke: true,
+                    segments: true,
+                    tolerance: 5 / paper.view.zoom
+                });
+
+                // 如果没有按住Shift键，则清空之前的选择
+                if (!event.modifiers.shift) {
+                    paper.project.deselectAll();
+                }
+
+                if (hitResult && hitResult.item) {
+                    // 切换选中状态
+                    hitResult.item.selected = !hitResult.item.selected;
+                }
+                
+                // 通知Python选中项改变
+                notifyPythonOfSelectionChange();
+            };
+            
+            // 画笔工具
+            window.penTool = new paper.Tool();
+            window.penTool.name = 'draw_pen';
+            
+            // 形状工具
+            window.shapeTool = new paper.Tool();
+            window.shapeTool.name = 'draw_shapes';
+            
+            // 填充工具
+            window.fillTool = new paper.Tool();
+            window.fillTool.name = 'fill';
+            
+            // 擦除工具
+            window.eraserTool = new paper.Tool();
+            window.eraserTool.name = 'eraser';
+            
+            console.log('所有工具初始化完成');
+        }
+        
+        // 激活工具函数
+        window.activateTool = function(toolName) {
+            try {
+                console.log('激活工具:', toolName);
+                
+                if (!paper || !paper.project) {
+                    throw new Error('Paper.js未初始化');
+                }
+                
+                // 取消选择所有项目
+                paper.project.deselectAll();
+                
+                // 激活对应的工具
+                let tool = null;
+                switch (toolName) {
+                    case 'select':
+                        tool = window.selectTool;
+                        break;
+                    case 'draw_pen':
+                        tool = window.penTool;
+                        break;
+                    case 'draw_shapes':
+                        tool = window.shapeTool;
+                        break;
+                    case 'fill':
+                        tool = window.fillTool;
+                        break;
+                    case 'eraser':
+                        tool = window.eraserTool;
+                        break;
+                    default:
+                        console.warn('未知工具:', toolName);
+                        tool = window.selectTool;
+                        toolName = 'select';
+                }
+                
+                if (tool) {
+                    tool.activate();
+                    window.AppState.currentTool = toolName;
+                    console.log('工具激活成功:', toolName);
+                    window.DebugUtils.updateDebugPanel();
+                    return true;
+                } else {
+                    throw new Error('工具未找到: ' + toolName);
+                }
+                
+            } catch (error) {
+                window.DebugUtils.error('工具激活失败:', error);
+                return false;
+            }
+        };
+        
+        // 设置颜色函数
+        window.setCurrentColor = function(color) {
+            try {
+                console.log('设置颜色:', color);
+                window.AppState.currentColor = color;
+                return true;
+            } catch (error) {
+                window.DebugUtils.error('设置颜色失败:', error);
+                return false;
+            }
+        };
+        
+        // 设置线宽函数
+        window.setStrokeWidth = function(width) {
+            try {
+                console.log('设置线宽:', width);
+                window.AppState.strokeWidth = width;
+                return true;
+            } catch (error) {
+                window.DebugUtils.error('设置线宽失败:', error);
+                return false;
+            }
+        };
+        
+        // 更新属性函数 - 核心功能
+        window.updateProperty = function(key, value) {
+            try {
+                console.log('更新属性:', key, '=', value);
+                
+                // 更新全局状态
+                if (key === 'fillColor') {
+                    window.AppState.currentColor = value;
+                } else if (key === 'strokeColor') {
+                    window.AppState.strokeColor = value;
+                } else if (key === 'strokeWidth') {
+                    window.AppState.strokeWidth = value;
+                }
+                
+                // 如果有选中的项目，应用到选中项
+                if (paper.project.selectedItems.length > 0) {
+                    paper.project.selectedItems.forEach(function(item) {
+                        if (key === 'fillColor') {
+                            item.fillColor = new paper.Color(value);
+                        } else if (key === 'strokeColor') {
+                            item.strokeColor = new paper.Color(value);
+                        } else if (key === 'strokeWidth') {
+                            item.strokeWidth = parseFloat(value);
+                        }
+                    });
+                    
+                    // 重绘视图
+                    paper.view.draw();
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('更新属性失败:', error);
+                return false;
+            }
+        };
+        
+        // 加载SVG函数
+        window.loadSvg = function(svgContent) {
+            try {
+                console.log('开始加载SVG...');
+                console.log('SVG内容长度:', svgContent.length);
+                console.log('SVG前100字符:', svgContent.substring(0, 100));
+                
+                if (!paper || !paper.project) {
+                    throw new Error('Paper.js未初始化');
+                }
+                
+                // 清除现有内容
+                paper.project.clear();
+                
+                // 导入SVG
+                const item = paper.project.importSVG(svgContent);
+                
+                if (!item) {
+                    throw new Error('SVG导入失败 - 返回null');
+                }
+                
+                console.log('SVG导入成功，对象类型:', item.constructor.name);
+                console.log('SVG边界:', item.bounds);
+                
+                // 计算缩放比例以适应视图
+                if (item.bounds && item.bounds.width > 0 && item.bounds.height > 0) {
+                    const viewSize = paper.view.size;
+                    const itemBounds = item.bounds;
+                    
+                    // 计算缩放比例（留一些边距）
+                    const padding = 50;
+                    const scaleX = (viewSize.width - padding * 2) / itemBounds.width;
+                    const scaleY = (viewSize.height - padding * 2) / itemBounds.height;
+                    const scale = Math.min(scaleX, scaleY, 1); // 不放大，只缩小
+                    
+                    console.log('计算缩放比例:', scale);
+                    
+                    if (scale !== 1) {
+                        item.scale(scale);
+                    }
+                    
+                    // 居中显示
+                    item.position = paper.view.center;
+                    
+                    console.log('SVG缩放和居中完成');
+                } else {
+                    console.warn('SVG边界信息无效:', item.bounds);
+                }
+                
+                // 刷新视图
+                paper.view.update();
+                
+                console.log('SVG加载完成，当前对象数量:', paper.project.activeLayer.children.length);
+                window.DebugUtils.updateDebugPanel();
+                
+                return paper.project.activeLayer.children.length;
+                
+            } catch (error) {
+                window.DebugUtils.error('SVG加载失败:', error);
+                return 0;
+            }
+        };
+        
+        // 获取SVG函数
+        window.getSvgContent = function() {
+            try {
+                if (!paper || !paper.project) {
+                    throw new Error('Paper.js未初始化');
+                }
+                
+                const svgContent = paper.project.exportSVG({ asString: true });
+                console.log('SVG导出成功，长度:', svgContent.length);
+                return svgContent;
+                
+            } catch (error) {
+                window.DebugUtils.error('SVG导出失败:', error);
+                return '';
+            }
+        };
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM加载完成，开始初始化...');
+            
+            // 延迟初始化确保Paper.js完全加载
+            setTimeout(function() {
+                if (initializePaper()) {
+                    console.log('=== Paper.js SVG Editor 初始化完成 ===');
+                    
+                    // 初始化QWebChannel
+                    initWebChannel();
+                    
+                    // 通知Python端初始化完成
+                    if (window.qt && window.qt.webChannelTransport) {
+                        console.log('Web编辑器初始化完成');
+                    }
+                } else {
+                    console.error('=== Paper.js SVG Editor 初始化失败 ===');
+                }
+            }, 100);
+        });
+        
+        // 键盘快捷键
+        document.addEventListener('keydown', function(event) {
+            // 按F12切换调试面板
+            if (event.key === 'F12') {
+                event.preventDefault();
+                window.DebugUtils.toggleDebugPanel();
+            }
+        });
+        
+        // 窗口大小改变时重新调整
+        window.addEventListener('resize', function() {
+            if (paper && paper.view) {
+                paper.view.viewSize = new paper.Size(window.innerWidth, window.innerHeight);
+                window.DebugUtils.updateDebugPanel();
+            }
+        });
+        
+        console.log('Paper.js SVG Editor 脚本加载完成');
+    </script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Paper.js SVG Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: #f8f9fa;
+        }
+        
+        #paperCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .tool-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .selection-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,123,255,0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+    <!-- 加载Paper.js库 -->
+    <script src="vendor/paperjs/paper-full.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container">
+        <canvas id="paperCanvas"></canvas>
+        <div class="tool-info" id="toolInfo">选择工具</div>
+        <div class="selection-info" id="selectionInfo">未选中任何元素</div>
+    </div>
+    
+    <script src="paperjs_editor.js"></script>
+</body>
+</html>

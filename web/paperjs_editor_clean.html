@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Paper.js SVG Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #f8f9fa;
+        }
+        
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+        }
+        
+        #paperCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: default;
+            /* 确保高清晰度 */
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
+        
+        .status-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            z-index: 100;
+            max-width: 300px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+    </style>
+    <!-- 加载Paper.js库 -->
+    <script src="paperjs/paper-full.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container">
+        <canvas id="paperCanvas"></canvas>
+        <div class="status-info" id="statusInfo">Paper.js编辑器就绪 - 等待SVG内容</div>
+    </div>
+    
+    <script src="paperjs_editor_pro.js"></script>
+</body>
+</html>

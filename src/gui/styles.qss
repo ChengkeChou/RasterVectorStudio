@@ -1,0 +1,319 @@
+/* =============================================================================
+   RasterVectorStudio 样式表
+   这个文件定义了整个应用程序的外观样式，与Python逻辑代码分离
+   ============================================================================= */
+
+/* 主窗口样式 */
+QMainWindow {
+    background: #f8f8f8;
+    color: #333;
+}
+
+/* 工具栏样式 */
+QToolBar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f0f0f0, stop:1 #e0e0e0);
+    border: 1px solid #ccc;
+    spacing: 3px;
+    padding: 2px;
+}
+
+QToolBar::separator {
+    background: #aaa;
+    width: 1px;
+    margin: 2px;
+}
+
+/* 左侧工具栏特殊样式 */
+QToolBar#LeftToolBar {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    spacing: 2px;
+}
+
+QToolBar#LeftToolBar QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 4px;
+    margin: 1px;
+    min-width: 50px;
+    min-height: 50px;
+}
+
+QToolBar#LeftToolBar QToolButton:hover {
+    background: #e0e0e0;
+    border: 1px solid #999;
+}
+
+QToolBar#LeftToolBar QToolButton:checked {
+    background: #d0d0d0;
+    border: 1px solid #666;
+}
+
+/* 按钮样式 */
+QPushButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ffffff, stop:1 #e6e6e6);
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-weight: bold;
+    min-height: 20px;
+}
+
+QPushButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f0f0f0, stop:1 #d0d0d0);
+}
+
+QPushButton:pressed {
+    background: #c0c0c0;
+}
+
+QPushButton:disabled {
+    background: #f0f0f0;
+    color: #999;
+}
+
+/* 主按钮样式（绿色） */
+QPushButton#PrimaryButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4CAF50, stop:1 #45a049);
+    border: 1px solid #45a049;
+    color: white;
+    padding: 10px;
+    font-weight: bold;
+}
+
+QPushButton#PrimaryButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5CBF60, stop:1 #4CAF50);
+}
+
+QPushButton#PrimaryButton:pressed {
+    background: #45a049;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background: #cccccc;
+    color: #888888;
+}
+
+/* 表单控件样式 */
+QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 4px;
+    background: white;
+    min-height: 20px;
+}
+
+QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover, QLineEdit:hover {
+    border: 1px solid #999;
+}
+
+QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
+    border: 2px solid #4CAF50;
+}
+
+/* 复选框样式 */
+QCheckBox {
+    spacing: 5px;
+    color: #333;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+}
+
+QCheckBox::indicator:unchecked {
+    border: 2px solid #ccc;
+    background: white;
+    border-radius: 3px;
+}
+
+QCheckBox::indicator:checked {
+    border: 2px solid #4CAF50;
+    background: #4CAF50;
+    border-radius: 3px;
+    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHZpZXdCb3g9IjAgMCAxMCAxMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEuNSA1TDQgNy41TDguNSAyLjUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+}
+
+/* 分组框样式 */
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #ccc;
+    border-radius: 6px;
+    margin: 8px 0px;
+    padding-top: 10px;
+    background: white;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 8px 0 8px;
+    background: #f8f8f8;
+    border-radius: 3px;
+}
+
+/* 标签页样式 */
+QTabWidget::pane {
+    border: 1px solid #ccc;
+    background: white;
+}
+
+QTabWidget::tab-bar {
+    left: 5px;
+}
+
+QTabBar::tab {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #e0e0e0, stop:1 #d0d0d0);
+    border: 1px solid #ccc;
+    padding: 6px 12px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected {
+    background: white;
+    border-bottom: 1px solid white;
+}
+
+QTabBar::tab:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f0f0f0, stop:1 #e0e0e0);
+}
+
+/* 停靠窗口样式 */
+QDockWidget {
+    background: #f8f8f8;
+    border: 1px solid #ccc;
+    titlebar-close-icon: url(close.png);
+    titlebar-normal-icon: url(undock.png);
+}
+
+QDockWidget::title {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #e0e0e0, stop:1 #d0d0d0);
+    padding: 6px;
+    font-weight: bold;
+    border-bottom: 1px solid #ccc;
+}
+
+QDockWidget::close-button, QDockWidget::float-button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 1px;
+}
+
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {
+    background: #c0c0c0;
+}
+
+/* 进度条样式 */
+QProgressBar {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    text-align: center;
+    font-size: 11px;
+    background: #f0f0f0;
+}
+
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4CAF50, stop:1 #45a049);
+    border-radius: 2px;
+}
+
+/* 文本编辑器样式 */
+QTextEdit {
+    border: 1px solid #ccc;
+    background: white;
+    font-family: "Consolas", "Monaco", "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* 标签样式 */
+QLabel {
+    color: #333;
+}
+
+QLabel#StatusLabel {
+    font-weight: bold;
+    color: #666;
+    font-size: 11px;
+}
+
+QLabel#PreviewLabel {
+    background: #f5f5f5;
+    border: 2px dashed #ccc;
+    border-radius: 5px;
+    color: #888;
+    font-size: 12px;
+    padding: 10px;
+}
+
+/* 分割器样式 */
+QSplitter::handle {
+    background: #ccc;
+}
+
+QSplitter::handle:horizontal {
+    width: 3px;
+}
+
+QSplitter::handle:vertical {
+    height: 3px;
+}
+
+QSplitter::handle:pressed {
+    background: #999;
+}
+
+/* 滚动条样式 */
+QScrollBar:vertical {
+    background: #f0f0f0;
+    width: 12px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical {
+    background: #ccc;
+    border-radius: 6px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #999;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: #f0f0f0;
+    height: 12px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #ccc;
+    border-radius: 6px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #999;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
