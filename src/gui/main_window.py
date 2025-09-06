@@ -252,11 +252,12 @@ class VectorizeWorker(QThread):
     error = pyqtSignal(str)     # 发送错误信息
     progress = pyqtSignal(str)  # 发送进度信息
 
-    def __init__(self, engine, input_path, params):
+    def __init__(self, engine, input_path, params, output_path=None):
         super().__init__()
         self.engine = engine
         self.input_path = input_path
         self.params = params
+        self.output_path = output_path or str(Path(input_path).with_suffix('.svg'))
         self._is_cancelled = False
 
     def cancel(self):
@@ -352,6 +353,50 @@ class VectorizeWorker(QThread):
                     )
                 except Exception as e:
                     raise RuntimeError(f"vtracer不可用: {e}")
+            elif self.engine == "DiffVG":
+                try:
+                    # 尝试使用Python 3.12优化版本
+                    try:
+                        from src.tools.diffvg_adapter_py312 import DiffVGAdapter
+                        adapter = DiffVGAdapter()
+                        self.progress.emit("正在初始化 DiffVG Python 3.12...")
+                    except ImportError:
+                        # 回退到原版本
+                        from src.tools.diffvg_adapter_real import DiffVGAdapter
+                        adapter = DiffVGAdapter()
+                        self.progress.emit("正在初始化 DiffVG...")
+                    
+                    # 使用统一的参数调用
+                    if hasattr(adapter, 'vectorize'):
+                        # 检查是否是新版本API (返回布尔值)
+                        if hasattr(adapter, 'vectorize_simple'):
+                            result = adapter.vectorize(
+                                self.input_path,
+                                self.output_path,
+                                num_shapes=self.params.get('num_paths', 50),
+                                max_iter=self.params.get('iterations', 200),
+                                use_pytorch=self.params.get('use_pytorch', False)
+                            )
+                            if result:
+                                # 读取生成的SVG文件
+                                with open(self.output_path, 'r', encoding='utf-8') as f:
+                                    svg_text = f.read()
+                            else:
+                                raise RuntimeError("DiffVG矢量化失败")
+                        else:
+                            # 旧版本API - 直接返回SVG内容
+                            svg_text = adapter.vectorize(
+                                self.input_path,
+                                num_paths=self.params.get('num_paths', 50),
+                                iterations=self.params.get('iterations', 200),
+                                learning_rate=self.params.get('learning_rate', 0.01),
+                                mode=self.params.get('mode', 'painterly'),
+                                loss_type=self.params.get('loss_type', 'lpips')
+                            )
+                    else:
+                        raise RuntimeError("DiffVG适配器缺少vectorize方法")
+                except Exception as e:
+                    raise RuntimeError(f"DiffVG不可用: {e}")
             else:
                 raise ValueError(f"不支持的引擎: {self.engine}")
 
@@ -429,6 +474,23 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"加载 vtracer 工具失败: {e}")
             self.vtracer = None
+            
+        try:
+            # 尝试使用Python 3.12优化版本
+            try:
+                from src.tools.diffvg_adapter_py312 import DiffVGAdapter
+                self.diffvg = DiffVGAdapter()
+                print(f"✅ DiffVG Python 3.12 版本加载成功")
+                print(f"📊 DiffVG 状态: {self.diffvg.get_info()}")
+            except ImportError:
+                # 回退到原版本
+                from src.tools.diffvg_adapter_real import DiffVGAdapter
+                self.diffvg = DiffVGAdapter()
+                print(f"⚠️ 使用DiffVG备用版本")
+                print(f"📊 DiffVG 状态: {self.diffvg.get_engine_info()}")
+        except Exception as e:
+            print(f"❌ 加载 DiffVG 工具失败: {e}")
+            self.diffvg = None
         
     # 删除之前的延迟获取方法，因为现在在_init_tools中直接初始化
 
@@ -719,7 +781,7 @@ class MainWindow(QMainWindow):
         self.cmb_engine = QComboBox()
         self.cmb_engine.addItems([
             "mkbitmap+potrace", "mkbitmap", "potrace",
-            "Trace(.NET)", "vtracer"
+            "Trace(.NET)", "vtracer", "DiffVG"
         ])
         self.cmb_engine.currentTextChanged.connect(self._on_engine_changed)
         layout.addWidget(self.cmb_engine)
@@ -749,6 +811,7 @@ class MainWindow(QMainWindow):
         self._create_potrace_params()
         self._create_trace_params()
         self._create_vtracer_params()
+        self._create_diffvg_params()
 
         layout.addStretch()
 
@@ -1280,6 +1343,62 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.param_stack.addWidget(widget)
 
+    def _create_diffvg_params(self):
+        """创建 DiffVG 的参数面板"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(8)
+
+        info_label = QLabel("DiffVG 是基于深度学习的可微分矢量化引擎，\n"
+                           "使用神经网络进行智能优化，输出高质量矢量图。")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        # 路径数量
+        layout.addWidget(QLabel("路径数量:"))
+        self.sp_diffvg_num_paths = QSpinBox()
+        self.sp_diffvg_num_paths.setRange(5, 500)
+        self.sp_diffvg_num_paths.setValue(50)
+        self.sp_diffvg_num_paths.setToolTip("生成的矢量路径数量")
+        layout.addWidget(self.sp_diffvg_num_paths)
+        
+        # 优化迭代次数
+        layout.addWidget(QLabel("优化迭代:"))
+        self.sp_diffvg_iterations = QSpinBox()
+        self.sp_diffvg_iterations.setRange(50, 1000)
+        self.sp_diffvg_iterations.setValue(200)
+        self.sp_diffvg_iterations.setToolTip("神经网络优化的迭代次数")
+        layout.addWidget(self.sp_diffvg_iterations)
+        
+        # 学习率
+        layout.addWidget(QLabel("学习率:"))
+        self.dsb_diffvg_lr = QDoubleSpinBox()
+        self.dsb_diffvg_lr.setRange(0.001, 1.0)
+        self.dsb_diffvg_lr.setValue(0.01)
+        self.dsb_diffvg_lr.setDecimals(3)
+        self.dsb_diffvg_lr.setSingleStep(0.001)
+        self.dsb_diffvg_lr.setToolTip("梯度下降的学习率")
+        layout.addWidget(self.dsb_diffvg_lr)
+        
+        # 渲染模式
+        layout.addWidget(QLabel("渲染模式:"))
+        self.cmb_diffvg_mode = QComboBox()
+        self.cmb_diffvg_mode.addItems(["painterly", "svg_refinement", "path_optimization"])
+        self.cmb_diffvg_mode.setCurrentText("painterly")
+        self.cmb_diffvg_mode.setToolTip("painterly: 绘画风格, svg_refinement: SVG精化, path_optimization: 路径优化")
+        layout.addWidget(self.cmb_diffvg_mode)
+        
+        # 损失函数
+        layout.addWidget(QLabel("损失函数:"))
+        self.cmb_diffvg_loss = QComboBox()
+        self.cmb_diffvg_loss.addItems(["l2", "lpips", "combined"])
+        self.cmb_diffvg_loss.setCurrentText("lpips")
+        self.cmb_diffvg_loss.setToolTip("l2: L2损失, lpips: 感知损失, combined: 混合损失")
+        layout.addWidget(self.cmb_diffvg_loss)
+
+        layout.addStretch()
+        self.param_stack.addWidget(widget)
+
     def _on_engine_changed(self, engine_name):
         """引擎切换时更新参数面板"""
         if engine_name in ["mkbitmap+potrace", "mkbitmap", "potrace"]:
@@ -1288,6 +1407,8 @@ class MainWindow(QMainWindow):
             self.param_stack.setCurrentIndex(1)  # Trace 参数
         elif engine_name == "vtracer":
             self.param_stack.setCurrentIndex(2)  # VTracer 参数
+        elif engine_name == "DiffVG":
+            self.param_stack.setCurrentIndex(3)  # DiffVG 参数
 
     def _set_mode(self, mode_name):
         """切换工具模式，并通知前端JS"""
@@ -1441,6 +1562,14 @@ class MainWindow(QMainWindow):
             params = {
                 'debug': self.chk_trace_debug.isChecked(),
             }
+        elif engine == "DiffVG":
+            params = {
+                'num_paths': self.sp_diffvg_num_paths.value(),
+                'iterations': self.sp_diffvg_iterations.value(),
+                'learning_rate': self.dsb_diffvg_lr.value(),
+                'mode': self.cmb_diffvg_mode.currentText(),
+                'loss_type': self.cmb_diffvg_loss.currentText(),
+            }
 
         # 启动处理
         self._start_vectorize_worker(engine, params)
@@ -1458,7 +1587,16 @@ class MainWindow(QMainWindow):
         self.lbl_status.setText("正在处理...")
 
         # 创建并启动工作线程
-        self.worker = VectorizeWorker(engine, self.input_path, params)
+        # 生成输出路径
+        if hasattr(self, 'output_path') and self.output_path:
+            output_path = self.output_path
+        else:
+            if self.input_path:
+                output_path = str(Path(self.input_path).with_suffix('.svg'))
+            else:
+                output_path = 'output.svg'
+        
+        self.worker = VectorizeWorker(engine, self.input_path, params, output_path)
         self.worker.finished.connect(self._on_vectorize_finished)
         self.worker.error.connect(self._on_vectorize_error)
         self.worker.progress.connect(self._on_vectorize_progress)

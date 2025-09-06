@@ -1,0 +1,328 @@
+"""
+DiffVG 适配器 - 基于深度学习的高级矢量化工具
+支持梯度优化和神经网络辅助的矢量化
+"""
+
+import sys
+import os
+import tempfile
+import subprocess
+from pathlib import Path
+from typing import Optional, Dict, Any
+import numpy as np
+from PIL import Image
+
+# 添加本地 pydiffvg 路径
+current_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(current_dir / "third_party"))
+
+try:
+    import torch
+    import pydiffvg
+    DIFFVG_AVAILABLE = True
+except ImportError:
+    DIFFVG_AVAILABLE = False
+
+
+class DiffVGAdapter:
+    """DiffVG 矢量化适配器"""
+    
+    def __init__(self):
+        self.available = DIFFVG_AVAILABLE and self._check_installation()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if DIFFVG_AVAILABLE else None
+        
+    def _check_installation(self) -> bool:
+        """检查 DiffVG 是否正确安装"""
+        try:
+            # 测试基本功能
+            pydiffvg.get_device()
+            return True
+        except Exception as e:
+            print(f"DiffVG 安装检查失败: {e}")
+            return False
+    
+    def is_available(self) -> bool:
+        """检查 DiffVG 是否可用"""
+        return self.available
+    
+    def get_engine_info(self) -> Dict[str, Any]:
+        """获取引擎信息"""
+        if not self.available:
+            return {
+                "name": "DiffVG",
+                "version": "未安装",
+                "status": "不可用",
+                "description": "需要安装 PyTorch 和 DiffVG"
+            }
+        
+        return {
+            "name": "DiffVG", 
+            "version": "latest",
+            "status": "可用",
+            "device": str(self.device),
+            "description": "基于深度学习的可微分矢量图形库"
+        }
+    
+    def vectorize_image(self, 
+                       image_path: str,
+                       output_path: str,
+                       method: str = "painterly",
+                       num_paths: int = 512,
+                       max_width: float = 4.0,
+                       num_iter: int = 500,
+                       use_lpips_loss: bool = True,
+                       **kwargs) -> str:
+        """
+        使用 DiffVG 进行图像矢量化
+        
+        Args:
+            image_path: 输入图像路径
+            output_path: 输出SVG路径
+            method: 矢量化方法 ('painterly', 'refine', 'optimize')
+            num_paths: 路径数量
+            max_width: 最大线宽
+            num_iter: 迭代次数
+            use_lpips_loss: 是否使用LPIPS损失
+            
+        Returns:
+            生成的SVG内容
+        """
+        if not self.available:
+            raise RuntimeError("DiffVG 不可用，请先安装相关依赖")
+        
+        try:
+            if method == "painterly":
+                return self._painterly_rendering(
+                    image_path, output_path, num_paths, max_width, num_iter, use_lpips_loss
+                )
+            elif method == "refine":
+                return self._refine_svg(image_path, output_path, num_iter, use_lpips_loss)
+            elif method == "optimize":
+                return self._optimize_paths(image_path, output_path, num_iter)
+            else:
+                raise ValueError(f"不支持的方法: {method}")
+                
+        except Exception as e:
+            raise RuntimeError(f"DiffVG 矢量化失败: {str(e)}")
+    
+    def _painterly_rendering(self, 
+                           image_path: str, 
+                           output_path: str,
+                           num_paths: int,
+                           max_width: float,
+                           num_iter: int,
+                           use_lpips_loss: bool) -> str:
+        """绘画风格渲染"""
+        
+        # 设置随机种子确保可重复性
+        pydiffvg.set_print_timing(False)
+        pydiffvg.set_device(self.device)
+        
+        # 加载目标图像
+        target = np.array(Image.open(image_path).convert('RGB')) / 255.0
+        target = torch.from_numpy(target).to(self.device, dtype=torch.float32)
+        target = target.permute(2, 0, 1).unsqueeze(0)  # NCHW format
+        
+        h, w = target.shape[2], target.shape[3]
+        
+        # 初始化形状
+        shapes = []
+        shape_groups = []
+        
+        for i in range(num_paths):
+            # 随机生成路径
+            num_control_points = 4
+            points = []
+            
+            # 随机起始点
+            p0 = torch.tensor([
+                np.random.uniform(0, w),
+                np.random.uniform(0, h)
+            ], dtype=torch.float32, device=self.device)
+            points.append(p0)
+            
+            # 生成贝塞尔曲线控制点
+            for j in range(num_control_points - 1):
+                p = p0 + torch.tensor([
+                    np.random.normal(0, min(w, h) * 0.1),
+                    np.random.normal(0, min(w, h) * 0.1)
+                ], dtype=torch.float32, device=self.device)
+                points.append(p)
+            
+            # 创建路径
+            path = pydiffvg.Path(
+                num_control_points=torch.tensor([num_control_points], dtype=torch.int32),
+                points=torch.stack(points),
+                stroke_width=torch.tensor(np.random.uniform(0.5, max_width), dtype=torch.float32),
+                is_closed=False
+            )
+            shapes.append(path)
+            
+            # 随机颜色
+            color = torch.tensor([
+                np.random.uniform(0, 1),
+                np.random.uniform(0, 1), 
+                np.random.uniform(0, 1),
+                1.0  # alpha
+            ], dtype=torch.float32, device=self.device)
+            
+            shape_group = pydiffvg.ShapeGroup(
+                shape_ids=torch.tensor([i], dtype=torch.int32),
+                fill_color=None,
+                stroke_color=color
+            )
+            shape_groups.append(shape_group)
+        
+        # 设置可学习参数
+        point_vars = []
+        color_vars = []
+        width_vars = []
+        
+        for i, path in enumerate(shapes):
+            path.points.requires_grad_(True)
+            path.stroke_width.requires_grad_(True)
+            shape_groups[i].stroke_color.requires_grad_(True)
+            
+            point_vars.append(path.points)
+            width_vars.append(path.stroke_width)
+            color_vars.append(shape_groups[i].stroke_color)
+        
+        # 优化器
+        points_optim = torch.optim.Adam(point_vars, lr=1.0)
+        width_optim = torch.optim.Adam(width_vars, lr=0.1)
+        color_optim = torch.optim.Adam(color_vars, lr=0.01)
+        
+        # LPIPS 损失（如果可用）
+        if use_lpips_loss:
+            try:
+                import lpips
+                lpips_fn = lpips.LPIPS(net='alex', version='0.1').to(self.device)
+            except ImportError:
+                print("LPIPS 不可用，使用 MSE 损失")
+                lpips_fn = None
+        else:
+            lpips_fn = None
+        
+        # 优化循环
+        for iteration in range(num_iter):
+            points_optim.zero_grad()
+            width_optim.zero_grad()
+            color_optim.zero_grad()
+            
+            # 渲染
+            scene_args = pydiffvg.RenderFunction.serialize_scene(
+                w, h, shapes, shape_groups
+            )
+            img = pydiffvg.RenderFunction.apply(
+                w, h, 2, 2, 0, None, *scene_args
+            )
+            img = img[:, :, :3]  # 移除 alpha 通道
+            img = img.unsqueeze(0).permute(0, 3, 1, 2)  # NCHW
+            
+            # 计算损失
+            if lpips_fn is not None:
+                loss = lpips_fn(img, target).mean()
+            else:
+                loss = torch.mean((img - target) ** 2)
+            
+            # 反向传播
+            loss.backward()
+            
+            # 更新参数
+            points_optim.step()
+            width_optim.step()
+            color_optim.step()
+            
+            # 约束
+            for path in shapes:
+                path.stroke_width.data.clamp_(0.1, max_width)
+            
+            for shape_group in shape_groups:
+                if shape_group.stroke_color is not None:
+                    shape_group.stroke_color.data.clamp_(0, 1)
+            
+            if iteration % 50 == 0:
+                print(f"迭代 {iteration}, 损失: {loss.item():.6f}")
+        
+        # 保存结果
+        pydiffvg.save_svg(output_path, w, h, shapes, shape_groups)
+        
+        # 读取并返回SVG内容
+        with open(output_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    
+    def _refine_svg(self, image_path: str, output_path: str, num_iter: int, use_lpips_loss: bool) -> str:
+        """精化现有SVG"""
+        # 这里需要一个初始SVG，暂时使用简单实现
+        return self._painterly_rendering(image_path, output_path, 256, 2.0, num_iter, use_lpips_loss)
+    
+    def _optimize_paths(self, image_path: str, output_path: str, num_iter: int) -> str:
+        """优化路径"""
+        return self._painterly_rendering(image_path, output_path, 128, 1.5, num_iter, False)
+    
+    def get_default_params(self) -> Dict[str, Any]:
+        """获取默认参数"""
+        return {
+            "method": "painterly",
+            "num_paths": 512,
+            "max_width": 4.0, 
+            "num_iter": 500,
+            "use_lpips_loss": True,
+            "device": "auto"
+        }
+    
+    def get_param_descriptions(self) -> Dict[str, str]:
+        """获取参数描述"""
+        return {
+            "method": "矢量化方法 (painterly/refine/optimize)",
+            "num_paths": "路径数量 (越多越精细)",
+            "max_width": "最大线条宽度",
+            "num_iter": "优化迭代次数",
+            "use_lpips_loss": "使用感知损失函数",
+            "device": "计算设备 (auto/cpu/cuda)"
+        }
+
+
+# 安装检查和帮助函数
+def check_diffvg_installation():
+    """检查 DiffVG 安装状态"""
+    try:
+        import torch
+        import pydiffvg
+        return True, "DiffVG 已正确安装"
+    except ImportError as e:
+        return False, f"DiffVG 未安装: {e}"
+
+def get_installation_guide():
+    """获取安装指南"""
+    return """
+安装 DiffVG 的步骤：
+
+1. 安装 PyTorch:
+   conda install -y pytorch torchvision -c pytorch
+
+2. 安装依赖包:
+   conda install -y numpy scikit-image
+   conda install -y -c anaconda cmake  
+   conda install -y -c conda-forge ffmpeg
+   pip install svgwrite svgpathtools cssutils numba
+
+3. 安装 DiffVG:
+   git clone https://github.com/BachiLi/diffvg.git
+   cd diffvg
+   git submodule update --init --recursive
+   python setup.py install
+
+4. 可选: 安装 LPIPS (提高质量):
+   pip install lpips
+
+安装完成后重启 RasterVectorStudio 即可使用 DiffVG 引擎。
+"""
+
+if __name__ == "__main__":
+    # 测试适配器
+    adapter = DiffVGAdapter()
+    print("DiffVG 适配器状态:", adapter.get_engine_info())
+    
+    if not adapter.is_available():
+        print("\n" + get_installation_guide())

@@ -34,10 +34,14 @@ class SvgEditorWidget(QWidget):
         
         # 设置WebChannel以便与JavaScript通信
         if self.main_window:
+            from .webchannel_interface import WebChannelInterface
+            
             self.channel = QWebChannel(self.view.page())
             self.view.page().setWebChannel(self.channel)
-            # 将MainWindow实例注册到channel，让JS可以调用它的方法
-            self.channel.registerObject("backend", self.main_window)
+            
+            # 使用专门的接口对象，而不是直接暴露 MainWindow
+            self.interface = WebChannelInterface(self.main_window)
+            self.channel.registerObject("backend", self.interface)
         
         # 加载专业版Paper.js编辑器页面
         html_path = get_resource_path("web/paperjs_editor_pro.html")
